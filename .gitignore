@@ -1,0 +1,17 @@
+# created by virtualenv automatically
+
+.env
+.venv/
+venv/
+
+# IDEs
+.idea/
+.vscode/
+
+# Some folders
+temp/
+**/__pycache__
+
+TODO.MD
+
+*.log
