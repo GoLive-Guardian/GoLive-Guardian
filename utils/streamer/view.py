@@ -5,6 +5,7 @@ from discord.utils import format_dt, utcnow
 from typing import Any, Collection, Optional, Tuple
 from utils.model import StreamerInfo
 from utils.util import get_mentioned_streamers
+from utils.exception import SpawnViewFailed
 from .button import ViewCloseDynamicButton
 
 import asyncio
@@ -18,7 +19,6 @@ __all__ = (
     "StreamerView"
 )
 
-from .. import SpawnViewFailed
 
 _log = logging.getLogger(__name__)
 
