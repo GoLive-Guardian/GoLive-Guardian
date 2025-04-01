@@ -335,9 +335,9 @@ class StreamConfig(ui.View):
     def _refresh_components(self) -> None:
         watch_channels = self.temp.watch
         if watch_channels:
-            self.watch_guilds.style = discord.ButtonStyle.green
+            self.watch_channels.style = discord.ButtonStyle.green
         else:
-            self.watch_guilds.style = discord.ButtonStyle.red
+            self.watch_channels.style = discord.ButtonStyle.red
 
         if not self.temp.channels or self.initial.is_same(self.temp):
             self.revert.disabled = True
@@ -444,7 +444,6 @@ class StreamConfig(ui.View):
                     if info is None:
                         info = ChannelInfo(id=channel_id, guild_id=final.id)
 
-                    info.watch = final.watch
                     info.stream_limit = final.channels[channel_id]
                     to_add_list.append(info)
 
@@ -461,7 +460,7 @@ class StreamConfig(ui.View):
                 voice_cog.event.set()
 
     @ui.button(label="Watch Channels", style=discord.ButtonStyle.green, row=1)
-    async def watch_guilds(self, interaction : discord.Interaction, _) -> None:
+    async def watch_channels(self, interaction : discord.Interaction, _) -> None:
         self.temp.watch = not self.temp.watch
         await self.update(interaction)
 

@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from typing_extensions import Self
 
 import datetime
-import discord
 import inspect
 
 
@@ -122,7 +121,7 @@ class GoLiveGuildSetup(_BaseStruct):
     @classmethod
     def from_mongo(cls, payload : dict[str, Any]) -> Self:
         try:
-            channels : Mapping[ChannelID, StreamLimit] = payload["channels"]
+            channels = payload["channels"]
             payload["channels"] = {int(k) : v for k, v in channels.items()}
         except KeyError:
             payload["channels"] = {}
@@ -134,28 +133,10 @@ class GoLiveGuildSetup(_BaseStruct):
         update = {channel_id : self.channels[channel_id] for channel_id in channels}
         return replace(self, channels=update)
 
-    def get_embed(self) -> discord.Embed:
-        watching = "YES" if self.watch else "No"
-
-        description = inspect.cleandoc(
-            f"""* Watching Channels: {watching}
-            * Channel Limit : {self.channel_limit}
-            * Stream Limit Per Channel : {self.stream_limit}
-            """
-        )
-        embed = discord.Embed(title="Current Setup", description=description, color=discord.Colour.blurple())
-
-        if self.channels:
-            value = "\n".join(f"* <#{channel}> : {limit}" for channel, limit in self.channels.items())
-            embed.add_field(name="Channel Info", value=value, inline=False)
-
-        embed.set_footer(text="If you want to select same channel, ")
-        return embed
-
     def get_as_channel_info(self) -> List[ChannelInfo]:
         return [
             ChannelInfo(
-                id=channel_id, guild_id=self.id, watch=self.watch, stream_limit=limit
+                id=channel_id, guild_id=self.id, stream_limit=limit
             ) for channel_id, limit in self.channels.items()
         ]
 
@@ -168,6 +149,5 @@ class BasicChannelInfo(_BaseStruct):
 
 @dataclass(unsafe_hash=True)
 class ChannelInfo(BasicChannelInfo):
-    watch : bool = field(default=False, compare=False)
     stream_limit : int = field(compare=False, default=1)
     streamers : set[StreamerInfo] = field(default_factory=set, compare=False)
