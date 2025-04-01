@@ -3,9 +3,9 @@ from collections import defaultdict
 from discord.ext import commands, tasks
 from discord.utils import utcnow, format_dt
 from typing import TYPE_CHECKING, Optional, Iterable
+from pymongo import DeleteOne
 from utils import (
     get_stream_status,
-    is_voice_channel,
     StreamerInfo,
     StreamerView,
     StreamConflictResolveView,
@@ -17,7 +17,6 @@ from utils import (
 import asyncio
 import discord
 import logging
-import random
 
 if TYPE_CHECKING:
     from bot import GoLiveGuardian
@@ -43,9 +42,13 @@ class Voice(commands.Cog):
         # To prevent data inconsistency, all setup commands are unavailable until bot's channel task being done.
         self._check_init : bool = False
 
+        self._guild_dumps : dict[int, list[ChannelInfo]] = defaultdict(list)
+        self.cleanup_left_guilds.start()
+
         self.event : asyncio.Event = asyncio.Event()
         self._channel_manager : asyncio.Task[None] = None
         self._get_unhandled_channels.start()
+
 
     @property
     def mongo(self) -> MongoClient:
@@ -65,13 +68,30 @@ class Voice(commands.Cog):
 
             _log.info(f"Found guild [%d] from DB and added [%d] unhandled channel(s)", guild.id, len(info))
 
-        loop = self.app.loop
-        loop.create_task(self.mongo._cleanup_db())
-        self._channel_manager = loop.create_task(self._handle_conflict())
+        await self.mongo._cleanup_db()
+        self._channel_manager = self.mongo._loop.create_task(self._handle_conflict())
 
     @_get_unhandled_channels.before_loop
     async def before_get_unhandled_channels(self):
         await self.app.wait_until_ready()
+
+    @tasks.loop(minutes=10)
+    async def cleanup_left_guilds(self):
+        if not self._guild_dumps:
+            return
+        
+        ops = {guild_id : DeleteOne({"id" : guild_id}) for guild_id in self._guild_dumps}        
+        success : frozenset[int] = await self.mongo._process_bulk(ops, True)
+        if not success:
+            return
+        
+        to_remove = []
+        for guild_id in success:
+            info = self._guild_dumps.pop(guild_id, None)
+            if info:
+                to_remove.extend(info)
+        
+        self._remove_unnecessary_things(to_remove)
 
     async def _handle_conflict(self) -> None:
         """It's used only once to handle Stream Conflicts after starting up.
@@ -92,54 +112,49 @@ class Voice(commands.Cog):
                 channel_id = info.id
                 view: Optional[StreamConflictResolveView] = info.conflict_view
 
-                if not info.watch :
-                    handled_info.append(info)
-                    if view:
-                        view.stop()
-                        info.conflict_view = None
-                else:
-                    try:
-                        channel : discord.VoiceChannel = self.app.get_channel(channel_id) or await self.app.fetch_channel(channel_id)
-                        existing_streamer: tuple[discord.Member] = tuple(m for m in channel.members if m.voice.self_stream)
+                try:
+                    channel : discord.VoiceChannel = self.app.get_channel(channel_id)
+                    existing_streamer: tuple[discord.Member] = tuple(m for m in channel.members if m.voice.self_stream)
 
-                        if not existing_streamer:
-                            _log.debug("[HANDLE CONFLICT] No conflict detected in channel [%d] before starting up.", channel_id)
+                    if not existing_streamer:
+                        _log.debug("[HANDLE CONFLICT] No conflict detected in channel [%d] before starting up.", channel_id)
 
-                        else:
-                            _log.debug("[HANDLE CONFLICT] %d Streamer(s) Detected in channel [%d]", len(existing_streamer), channel_id)
+                    else:
+                        _log.debug("[HANDLE CONFLICT] %d Streamer(s) Detected in channel [%d]", len(existing_streamer), channel_id)
 
-                            if len(existing_streamer) > info.stream_limit:
-                                _log.warning("[HANDLE CONFLICT] Stream limit exceeded. Sent ConflicView to channel [%d]", channel_id)
-                                await self._send_conflict_view(existing_streamer, channel, info, view)
+                        if len(existing_streamer) > info.stream_limit:
+                            _log.warning("[HANDLE CONFLICT] Stream limit exceeded. Sent ConflicView to channel [%d]", channel_id)
+                            await self._send_conflict_view(existing_streamer, channel, info, view)
 
-                            if not info.streamers:
-                                streamers = tuple(StreamerInfo(id=streamer.id) for streamer in existing_streamer)
-                                info.streamers.update(streamers)
+                        if not info.streamers:
+                            streamers = tuple(StreamerInfo(id=streamer.id) for streamer in existing_streamer)
+                            info.streamers.update(streamers)
 
-                    except SpawnViewFailed as e:
-                        _log.warning("[HANDLE CONFLICT] %s", e)
-                        continue
+                except SpawnViewFailed as e:
+                    _log.warning("[HANDLE CONFLICT] %s", e)
+                    continue
 
-                    except (discord.NotFound, discord.Forbidden, discord.InvalidData) as e:
-                        _log.warning(f"[HANDLE CONFLICT] Channel [%d] not found or forbidden or has invalid data. Removing from DB.", channel_id, exc_info=e)
-                        removing_channel.append(info)
-                        continue
+                except (discord.NotFound, discord.Forbidden, discord.InvalidData) as e:
+                    _log.warning(f"[HANDLE CONFLICT] Channel [%d] not found or forbidden or has invalid data. Removing from DB.", channel_id, exc_info=e)
+                    removing_channel.append(info)
+                    continue
 
-                    except Exception as e:
-                        _log.warning(f"[HANDLE CONFLICT] Fetch failed channel [%d]. Should be handled later.", channel_id, exc_info=e)
-                        continue
+                except Exception as e:
+                    _log.warning(f"[HANDLE CONFLICT] Fetch failed channel [%d]. Should be handled later.", channel_id, exc_info=e)
+                    continue
+
+                finally:
+                    # Sleeps to prevent blocking from context switching
+                    # if guild unhandled channels are collected too much.
+                    if count >= 10:
+                        await asyncio.sleep(0)
+                        count = 0
+                    else:
+                        count += 1
 
                 self.channel_info[channel_id] = info
                 handled_info.append(info)
                 _log.info("[HANDLE CONFLICT] Successfully handling channel [%d]", channel_id)
-
-                # Sleeps to prevent blocking from context switching
-                # if guild unhandled channels are collected too much.
-                if count >= 10:
-                    await asyncio.sleep(0)
-                    count = 0
-                else:
-                    count += 1
 
             self.unhandled_channels.difference_update(handled_info)
             await self.mongo.remove_invalid_channels(removing_channel)
@@ -251,19 +266,18 @@ class Voice(commands.Cog):
         if not channels:
             return
 
+        to_delete : list[ChannelInfo] = []
+
+        for channel in channels:
+            info = self.channel_info.get(channel.id, None)
+            if info:
+                to_delete.append(info)
+
+        for info in to_delete:
+            del self.channel_info[info.id]
+
         count = len(channels)
         form = "Channels are" if count > 1 else "Channel is"
-
-        self.unhandled_channels.difference_update(channels)
-        for channel in channels:
-            info = self.channel_info.pop(channel.id, None)
-            if info is None:
-                continue
-
-            view = info.conflict_view
-            if view:
-                view.stop()
-
         _log.info("%d Voice %s not being unhandled from now.", count, form)
 
     @commands.Cog.listener()
@@ -318,9 +332,13 @@ class Voice(commands.Cog):
         _log.info("Left guild [%d]", guild.id)
 
         data : GoLiveGuildSetup = await self.mongo.get_guild_info(guild)
-        await self.mongo.leave_guild(guild)
-        self._remove_unnecessary_things(data.get_as_channel_info())
+        info = data.get_as_channel_info()
+        result = await self.mongo.leave_guild(guild)
 
+        if result:
+            self._remove_unnecessary_things(info)
+        else:
+            self._guild_dumps[guild.id] = info
         
 async def setup(app : GoLiveGuardian) -> None:
     await app.add_cog(Voice(app))
