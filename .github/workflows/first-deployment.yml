@@ -86,7 +86,7 @@ jobs:
           command: |
             cd ${{ env.REPO_NAME }}
             echo "BOT_TOKEN='${{ secrets.BOT_TOKEN }}'" > .env
-            echo "MONGO_URI='${{ secrets.MONGO_URI }}''" > .env
+            echo "MONGO_URI='${{ secrets.MONGO_URI }}''" >> .env
             echo $?
           host: ${{ secrets.VPS_IP }}
           user: ${{ secrets.VPS_USER }}
