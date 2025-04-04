@@ -1,7 +1,11 @@
-name: (Re)initialize Deployment
-run-name: (Re)initialize Deployment by ${{ github.actor }}
+name: Reinitialize Deployment
+run-name: Reinitialize Deployment by ${{ github.actor }}
 
 on:
+  workflow_run:
+    workflows: [ "Initialize pip and venv" ]
+    types:
+      - completed
   workflow_dispatch:
 
 env:
@@ -9,22 +13,9 @@ env:
   VENV: "venv"
 
 jobs:
-  setup-python:
+  install-venv:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
     steps:
-      - name: Install pip and venv
-        uses: fifsky/ssh-action@master
-        with:
-          command: |
-            export DEBIAN_FRONTEND=noninteractive
-            sudo apt-get install -y python3-pip python3-venv
-            echo "pip installation completed"
-            exit 0
-          host: ${{ secrets.VPS_IP }}
-          user: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-
       - name: Setup Venv
         uses: fifsky/ssh-action@master
         with:
@@ -32,7 +23,7 @@ jobs:
             mkdir -p ${{ env.REPO_NAME }} && cd ${{ env.REPO_NAME }}
             rm -rf ${{env.VENV}}
             python3 -m venv ${{env.VENV}}
-            source ${{env.TEST}}/bin/activate
+            source ${{env.VENV}}/bin/activate
             pip --version
             deactivate
             echo "Venv Setup Done!"
@@ -42,7 +33,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
 
   deploy-via-sftp:
-    needs: [ setup-python ]
+    needs: [ install-venv ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +77,7 @@ jobs:
           command: |
             cd ${{ env.REPO_NAME }}
             echo "BOT_TOKEN='${{ secrets.BOT_TOKEN }}'" > .env
-            echo "MONGO_URI='${{ secrets.MONGO_URI }}''" >> .env
+            echo "MONGO_URI='${{ secrets.MONGO_URI }}'" >> .env
             echo $?
           host: ${{ secrets.VPS_IP }}
           user: ${{ secrets.VPS_USER }}
