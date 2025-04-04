@@ -17,8 +17,8 @@ Potential Streamer - A member try to Go Live stream in a voice channel - may enc
   * After the streamer being kicked, A warn message that contains stream info about the channel will be sent.
     * This message will be removed by clicking button by the streamer or Manage Message permission holder.
 
-* Occurred before the Bot runs 
-  * After starting up, Bot detects all channels that exceed each channel's stream limit (Conflict Channels).
+* Occurred before the Bot runs or the channel had not handled before
+  * After starting (or setting) up, Bot detects all channels that exceed each channel's stream limit (Conflict Channels).
   * Bot sends messages that request streamers to resolve conflict in 3 minutes to all Conflict Channels.
     * If the conflict isn't resolved until expiration time, then all streamers will be kicked from the channel.
     * If a channel's stream count backs to normal, then considered as conflict resolved.
@@ -26,7 +26,7 @@ Potential Streamer - A member try to Go Live stream in a voice channel - may enc
 ## 2. Commands
 All commands can be run by members who have **Manage Channels** and are slash commands.
 
-### - setup
+### - Setup
 First, you may need to run `/setup` command to determine voice channels to let bot watch. 
 Then, you can see a menu and buttons. If a channel is public, then setup message will be shown for you.
 
