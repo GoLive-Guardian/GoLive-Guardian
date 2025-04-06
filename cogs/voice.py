@@ -108,7 +108,7 @@ class Voice(commands.Cog):
             removing_channel : list[ChannelInfo] = []
             count = 0
 
-            for info in tuple(self.unhandled_channels):
+            for info in tuple(self.unhandled_channels.copy()):
                 channel_id = info.id
                 view: Optional[StreamConflictResolveView] = info.conflict_view
 

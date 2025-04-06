@@ -448,7 +448,7 @@ class StreamConfig(ui.View):
                     to_add_list.append(info)
 
             to_add_list.extend([
-                ChannelInfo(id=channel_id, guild_id=final.id, stream_limit=final.channels[channel_id], watch=final.watch)
+                ChannelInfo(id=channel_id, guild_id=final.id, stream_limit=final.channels[channel_id])
                 for channel_id in to_add
             ])
 
